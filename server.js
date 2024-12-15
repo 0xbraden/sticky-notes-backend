@@ -32,7 +32,7 @@ const stickyNotes = [];
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] // Replace with your production domain
+    ? ['https://sticky-notes-frontend-nine.vercel.app'] // Replace with your actual frontend domain
     : 'http://localhost:3000',
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
