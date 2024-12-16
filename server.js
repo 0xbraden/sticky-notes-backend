@@ -21,6 +21,7 @@ const CONFIG = {
   RATE_LIMIT_MAX: 100,
   ALLOWED_COLORS: ['pink', 'purple', 'blue', 'green', 'yellow'],
   ALLOWED_ORIGINS: [
+    'https://www.stickynotes.gg',
     'https://sticky-notes-frontend-b025kwaxx-0xbradens-projects.vercel.app',
     'http://localhost:3000'
   ]
@@ -68,7 +69,8 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '16kb' }));
 
 // Connect to MongoDB with detailed error logging
-mongoose.connect(process.env.MONGODB_URI, {
+const uri = "mongodb+srv://litterboxbtc:<db_password>@cluster0.6xlky.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+mongoose.connect(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
