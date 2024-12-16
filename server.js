@@ -4,99 +4,65 @@ const WebSocket = require("ws");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const rateLimit = require('express-rate-limit');
+const { connectDB, StickyNote } = require('./db');
+require('dotenv').config();
 
 // Configuration
 const CONFIG = {
   PORT: process.env.PORT || 3001,
-  MAX_NOTES: 1000, // Maximum number of notes to store in memory
-  MESSAGE_MAX_LENGTH: 500, // Maximum length of a sticky note message
-  RATE_LIMIT_WINDOW: 15 * 60 * 1000, // 15 minutes
-  RATE_LIMIT_MAX: 100, // Maximum requests per window
-  ALLOWED_COLORS: ['pink', 'purple', 'blue', 'green', 'yellow'] // Valid color options
+  MESSAGE_MAX_LENGTH: 500,
+  RATE_LIMIT_WINDOW: 15 * 60 * 1000,
+  RATE_LIMIT_MAX: 100,
+  ALLOWED_COLORS: ['pink', 'purple', 'blue', 'green', 'yellow']
 };
 
-// Initialize Express app
+// Initialize Express app and connect to database
 const app = express();
 const server = http.createServer(app);
+connectDB();
 
-// WebSocket server with ping-pong heartbeat
+// WebSocket server setup remains the same
 const wss = new WebSocket.Server({ 
   server,
   clientTracking: true,
-  maxPayload: 1024 * 16 // 16kb max payload size
+  maxPayload: 1024 * 16
 });
 
-// In-memory storage with circular buffer behavior
-const stickyNotes = [];
-
-// Middleware
+// Middleware remains the same
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://sticky-notes-frontend-nine.vercel.app'] // Replace with your actual frontend domain
+    ? ['https://sticky-notes-frontend-nine.vercel.app']
     : 'http://localhost:3000',
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: CONFIG.RATE_LIMIT_WINDOW,
-  max: CONFIG.RATE_LIMIT_MAX,
-  message: 'Too many requests from this IP, please try again later.'
-});
-
 app.use(limiter);
 app.use(bodyParser.json({ limit: '16kb' }));
 
-// Input validation middleware
-const validateNote = (req, res, next) => {
-  const { message, signature, walletAddress, color } = req.body;
-
-  if (!message || !signature || !walletAddress) {
-    return res.status(400).json({ error: 'Missing required fields' });
+// Modified API Routes
+app.get("/api/sticky-notes", async (req, res) => {
+  try {
+    const notes = await StickyNote.find().sort({ timestamp: -1 }).limit(1000);
+    res.json(notes);
+  } catch (error) {
+    console.error('Error fetching sticky notes:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  if (message.length > CONFIG.MESSAGE_MAX_LENGTH) {
-    return res.status(400).json({ error: 'Message too long' });
-  }
-
-  if (typeof message !== 'string' || typeof signature !== 'string' || typeof walletAddress !== 'string') {
-    return res.status(400).json({ error: 'Invalid data types' });
-  }
-
-  // Validate color if provided
-  if (color && !CONFIG.ALLOWED_COLORS.includes(color)) {
-    return res.status(400).json({ error: 'Invalid color selection' });
-  }
-
-  next();
-};
-
-// API Routes
-app.get("/api/sticky-notes", (req, res) => {
-  res.json(stickyNotes);
 });
 
-app.post("/api/sticky-notes", validateNote, (req, res) => {
+app.post("/api/sticky-notes", validateNote, async (req, res) => {
   try {
     const { message, signature, walletAddress, color } = req.body;
-    const timestamp = new Date().toISOString();
-
-    const newNote = { 
+    
+    const newNote = new StickyNote({ 
       message, 
       signature, 
       walletAddress,
-      color: color || 'yellow', // Default to yellow if no color provided
-      timestamp,
-      id: `${signature.slice(0, 8)}-${Date.now()}` 
-    };
+      color: color || 'yellow',
+    });
 
-    // Implement circular buffer
-    if (stickyNotes.length >= CONFIG.MAX_NOTES) {
-      stickyNotes.shift(); // Remove oldest note
-    }
-    
-    stickyNotes.push(newNote);
+    await newNote.save();
 
     // Broadcast to WebSocket clients
     const broadcastData = JSON.stringify(newNote);
@@ -108,6 +74,9 @@ app.post("/api/sticky-notes", validateNote, (req, res) => {
 
     res.status(201).json(newNote);
   } catch (error) {
+    if (error.code === 11000) { // Duplicate key error
+      return res.status(400).json({ error: 'Note with this signature already exists' });
+    }
     console.error('Error processing sticky note:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
