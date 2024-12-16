@@ -21,6 +21,7 @@ const CONFIG = {
   RATE_LIMIT_MAX: 100,
   ALLOWED_COLORS: ['pink', 'purple', 'blue', 'green', 'yellow'],
   ALLOWED_ORIGINS: [
+    '*',
     'https://www.stickynotes.gg',
     'https://sticky-notes-frontend-b025kwaxx-0xbradens-projects.vercel.app',
     'http://localhost:3000'
@@ -62,7 +63,7 @@ const server = http.createServer(app);
 
 // CORS configuration - more permissive for debugging
 app.use(cors({
-  origin: true, // Allow all origins temporarily for debugging
+  origin: CONFIG.ALLOWED_ORIGINS,
   credentials: true
 }));
 
@@ -70,17 +71,15 @@ app.use(bodyParser.json({ limit: '16kb' }));
 
 // Connect to MongoDB with detailed error logging
 const uri = "mongodb+srv://litterboxbtc:<db_password>@cluster0.6xlky.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
-mongoose.connect(uri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => {
-  log('MongoDB connected successfully');
-})
-.catch((error) => {
-  log('MongoDB connection error:', error);
-  process.exit(1);
-});
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => {
+    log('MongoDB connected successfully');
+  })
+  .catch((error) => {
+    log('MongoDB connection error:', error);
+    // Don't exit the process immediately, let's keep the server running
+    // process.exit(1);
+  });
 
 // Modified GET route with error logging
 app.get("/api/sticky-notes", async (req, res) => {
@@ -141,16 +140,47 @@ app.post("/api/sticky-notes", async (req, res) => {
 });
 
 // WebSocket server
-const wss = new WebSocket.Server({ server });
+// In server.js
+const wss = new WebSocket.Server({ 
+  server,
+  path: '/ws' // Add explicit path
+});
+
+// Add heartbeat to keep connections alive
+function heartbeat() {
+  this.isAlive = true;
+}
 
 wss.on("connection", (ws) => {
   log("New WebSocket connection");
   
   ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('pong', heartbeat);
   
+  // Send initial data on connection
+  StickyNote.find()
+    .sort({ timestamp: -1 })
+    .limit(1000)
+    .then(notes => {
+      ws.send(JSON.stringify({ type: 'initial', notes }));
+    })
+    .catch(error => log('Error fetching initial notes:', error));
+    
   ws.on('error', (error) => log('WebSocket error:', error));
   ws.on('close', () => log('WebSocket connection closed'));
+});
+
+// Add ping interval
+const interval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(interval);
 });
 
 // Start server
