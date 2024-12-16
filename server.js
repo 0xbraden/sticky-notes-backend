@@ -20,7 +20,6 @@ const CONFIG = {
   ALLOWED_ORIGINS: [
     '*',
     'https://www.stickynotes.gg',
-    'https://sticky-notes-frontend-b025kwaxx-0xbradens-projects.vercel.app',
     'http://localhost:3000'
   ],
   DATA_FILE: path.join(__dirname, 'notes.json')
