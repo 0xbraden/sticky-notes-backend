@@ -5,6 +5,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const fs = require('fs').promises;
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 // Add detailed logging
 const log = (message, error = null) => {
@@ -74,25 +75,32 @@ app.get("/api/sticky-notes", async (req, res) => {
 app.post("/api/sticky-notes", async (req, res) => {
   try {
     log('Received new note:', req.body);
-    const { message, signature, walletAddress, color } = req.body;
+    const { message, signature, walletAddress, color, onChain } = req.body;
     
-    if (!message || !signature || !walletAddress) {
+    if (!message || !walletAddress) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // If onChain is true, require signature
+    if (onChain && !signature) {
+      return res.status(400).json({ error: 'Signature required for on-chain notes' });
     }
 
     const notes = await readNotes();
     
-    // Check if signature already exists
-    if (notes.some(note => note.signature === signature)) {
+    // Check if signature already exists (only for on-chain notes)
+    if (onChain && notes.some(note => note.signature === signature)) {
       return res.status(400).json({ error: 'Note with this signature already exists' });
     }
 
     const newNote = {
+      id: uuidv4(), // Generate unique ID for all notes
       message,
-      signature,
+      signature: onChain ? signature : null,
       walletAddress,
       color: color || 'yellow',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      onChain: !!onChain
     };
 
     notes.unshift(newNote); // Add to beginning of array
